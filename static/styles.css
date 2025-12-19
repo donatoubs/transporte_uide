@@ -1,0 +1,392 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #fafafa;
+    min-height: 100vh;
+    color: #1a1a1a;
+}
+
+.container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 40px 32px;
+}
+
+/* Minimal Card Style */
+.glass {
+    background: #ffffff;
+    border: 1px solid #e5e5e5;
+    border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+/* Header */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 40px;
+    padding: 24px 32px;
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.logo-icon {
+    font-size: 28px;
+    background: #1a1a1a;
+    color: white;
+    padding: 12px;
+    border-radius: 12px;
+}
+
+.logo h1 {
+    font-size: 24px;
+    font-weight: 600;
+    color: #1a1a1a;
+    letter-spacing: -0.5px;
+}
+
+.logo p {
+    font-size: 13px;
+    color: #737373;
+    font-weight: 400;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+}
+
+.status-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #f5f5f5;
+    border: 1px solid #e5e5e5;
+    padding: 8px 16px;
+    border-radius: 100px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #404040;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    background: #22c55e;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}
+
+.date-text {
+    font-size: 13px;
+    color: #737373;
+    font-weight: 400;
+    text-transform: capitalize;
+}
+
+/* Stats Grid */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 32px;
+}
+
+.stat-card {
+    padding: 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    transition: all 0.2s ease;
+}
+
+.stat-card:hover {
+    border-color: #d4d4d4;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.stat-icon {
+    font-size: 24px;
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.stat-icon.purple {
+    background: #f5f5f5;
+}
+
+.stat-icon.green {
+    background: #f5f5f5;
+}
+
+.stat-icon.orange {
+    background: #f5f5f5;
+}
+
+.stat-icon.pink {
+    background: #f5f5f5;
+}
+
+.stat-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.stat-value {
+    font-size: 32px;
+    font-weight: 600;
+    color: #1a1a1a;
+    letter-spacing: -1px;
+    line-height: 1;
+}
+
+.stat-label {
+    font-size: 13px;
+    color: #737373;
+    font-weight: 400;
+}
+
+/* Table Section */
+.table-section {
+    overflow: hidden;
+    margin-bottom: 24px;
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 28px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.section-header h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1a1a1a;
+}
+
+.refresh-btn {
+    background: #1a1a1a;
+    border: none;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.refresh-btn:hover {
+    background: #333333;
+}
+
+.refresh-btn:active {
+    transform: scale(0.98);
+}
+
+.table-container {
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th {
+    text-align: left;
+    padding: 14px 24px;
+    font-size: 11px;
+    font-weight: 500;
+    color: #737373;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: #fafafa;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+td {
+    padding: 16px 24px;
+    font-size: 14px;
+    border-bottom: 1px solid #f5f5f5;
+    color: #404040;
+}
+
+tr:last-child td {
+    border-bottom: none;
+}
+
+tr:hover {
+    background: #fafafa;
+}
+
+.id-badge {
+    background: #f5f5f5;
+    color: #1a1a1a;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-weight: 500;
+    font-size: 13px;
+    font-family: 'SF Mono', 'Consolas', monospace;
+}
+
+.route-name {
+    font-weight: 500;
+    color: #1a1a1a;
+}
+
+.address-cell {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #737373;
+    font-size: 13px;
+}
+
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 100px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.status-pill.active {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.status-pill.completed {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.loading-text,
+.no-data,
+.error-text {
+    text-align: center;
+    color: #737373;
+    padding: 48px !important;
+    font-size: 14px;
+}
+
+.error-text {
+    color: #dc2626;
+}
+
+/* Footer */
+.footer {
+    text-align: center;
+    color: #a3a3a3;
+    font-size: 13px;
+    padding: 32px 24px;
+}
+
+.update-time {
+    margin-top: 4px;
+    color: #d4d4d4;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .container {
+        padding: 20px 16px;
+    }
+
+    .header {
+        flex-direction: column;
+        gap: 16px;
+        text-align: center;
+        padding: 20px;
+    }
+
+    .header-right {
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .stats-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .section-header {
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px 20px;
+    }
+
+    .stat-card {
+        padding: 20px;
+    }
+
+    .stat-value {
+        font-size: 28px;
+    }
+
+    th,
+    td {
+        padding: 12px 16px;
+    }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f5f5f5;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #d4d4d4;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #a3a3a3;
+}
+
+/* Add Inter font */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
