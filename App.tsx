@@ -1,65 +1,35 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Alert, ActivityIndicator, SafeAreaView, StatusBar, ScrollView, Dimensions } from 'react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { StyleSheet, Text, View, TouchableOpacity, Alert, SafeAreaView, StatusBar } from 'react-native';
+import { useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Home, Clock, QrCode, Bus, Navigation, StopCircle, MapPin, Settings } from 'lucide-react-native';
+import { Home, Clock, Bus, MapPin, Settings } from 'lucide-react-native';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import * as Network from 'expo-network';
-import { WebView } from 'react-native-webview';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+// Imports del proyecto modularizado
+import { API_URL, COLORS } from './src/constants';
+import { Trip, ConductorData, JornadaData, HorarioGroup } from './src/types';
 
-// --- CONFIGURACIÓN ---
-const API_URL = 'http://192.168.100.204:8000';
+// Componentes
+import LeafletMap from './src/components/LeafletMap';
 
-// --- TIPOS ---
-interface RouteInfo { id: string; name: string; busNumber?: string; }
-interface Trip {
-  localId: string;
-  databaseId?: number;
-  route: RouteInfo;
-  startTime: string;
-  endTime?: string;
-  status: 'active' | 'completed';
-  // Campos para sincronización offline
-  syncStatus: 'synced' | 'pending_start' | 'pending_end';
-  startLatitude?: number;
-  startLongitude?: number;
-  startAddress?: string;
-  endLatitude?: number;
-  endLongitude?: number;
-  endAddress?: string;
-}
-
-// --- TIPOS CONDUCTOR ---
-interface ConductorData {
-  id: number;
-  nombre: string;
-  bus_asignado: string;
-}
-
-interface JornadaData {
-  id: number;
-  inicio: string;
-  estudiantes_transportados: number;
-}
-
-// --- COLORES ---
-const COLORS = {
-  background: '#FAFAFA',
-  dark: '#111827',
-  primary: '#4F46E5',
-  text: '#1F2937',
-  gray: '#9CA3AF',
-  success: '#10B981',
-  driver: '#F59E0B', // Color especial para modo conductor
-};
+// Pantallas
+import ScanningScreen from './src/screens/ScanningScreen';
+import PassengerHomeScreen from './src/screens/PassengerHomeScreen';
+import PassengerTripScreen from './src/screens/PassengerTripScreen';
+import PassengerHistoryScreen from './src/screens/PassengerHistoryScreen';
+import PassengerSchedulesScreen from './src/screens/PassengerSchedulesScreen';
+import PassengerSettingsScreen from './src/screens/PassengerSettingsScreen';
+import DriverLoginScreen from './src/screens/DriverLoginScreen';
+import DriverHomeScreen from './src/screens/DriverHomeScreen';
+import DriverJornadaScreen from './src/screens/DriverJornadaScreen';
+import DriverHistoryScreen from './src/screens/DriverHistoryScreen';
 
 export default function App() {
-  const [view, setView] = useState<'HOME' | 'SCANNING' | 'ON_TRIP' | 'HISTORY' | 'MAP' | 'SETTINGS' | 'DRIVER_LOGIN' | 'DRIVER_HOME'>('HOME');
+  const [view, setView] = useState<'HOME' | 'SCANNING' | 'ON_TRIP' | 'HISTORY' | 'MAP' | 'SETTINGS' | 'SCHEDULES' | 'DRIVER_LOGIN' | 'DRIVER_HOME' | 'DRIVER_HISTORIAL' | 'DRIVER_JORNADA_ACTIVA'>('HOME');
   const [activeTrip, setActiveTrip] = useState<Trip | null>(null);
   const [history, setHistory] = useState<Trip[]>([]);
   const [permission, requestPermission] = useCameraPermissions();
@@ -68,13 +38,19 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationWatcher, setLocationWatcher] = useState<Location.LocationSubscription | null>(null);
-  const webViewRef = useRef<WebView>(null);
 
   // --- ESTADOS MODO CONDUCTOR ---
-  const [isDriverMode, setIsDriverMode] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [driverData, setDriverData] = useState<ConductorData | null>(null);
   const [activeJornada, setActiveJornada] = useState<JornadaData | null>(null);
+  const [routes, setRoutes] = useState<{ id: number; nombre_ruta: string }[]>([]);
+  const [selectedRoute, setSelectedRoute] = useState<{ id: number; nombre_ruta: string } | null>(null);
+  const [selectedHorario, setSelectedHorario] = useState<string | null>(null);
+  const [elapsedTime, setElapsedTime] = useState<string>('00:00:00');
+  const [driverHistorial, setDriverHistorial] = useState<any[]>([]);
+
+  // --- HORARIOS ---
+  const [schedules, setSchedules] = useState<HorarioGroup[]>([]);
 
   const todayDate = format(new Date(), "EEEE, d 'de' MMMM", { locale: es });
 
@@ -177,6 +153,25 @@ export default function App() {
     };
   }, []);
 
+  // --- VERIFICAR JORNADA ACTIVA AL INICIAR SESIÓN DE CONDUCTOR ---
+  useEffect(() => {
+    const checkActiveJornada = async () => {
+      if (driverData && !activeJornada) {
+        try {
+          const res = await fetch(`${API_URL}/api/conductor/jornada/actual/${driverData.id}`);
+          const data = await res.json();
+          if (data.jornada && !data.jornada.fin) {
+            setActiveJornada(data.jornada);
+            setView('DRIVER_JORNADA_ACTIVA');
+          }
+        } catch (e) {
+          console.log("Error verificando jornada activa:", e);
+        }
+      }
+    };
+    checkActiveJornada();
+  }, [driverData]);
+
   // --- WATCH LOCATION FOR MAP ---
   const startWatchingLocation = useCallback(async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
@@ -186,7 +181,6 @@ export default function App() {
       return;
     }
 
-    // Get initial location
     try {
       const loc = await Location.getCurrentPositionAsync({});
       setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
@@ -194,7 +188,6 @@ export default function App() {
       console.log("Error getting initial location:", e);
     }
 
-    // Watch location
     const watcher = await Location.watchPositionAsync(
       { accuracy: Location.Accuracy.High, distanceInterval: 10 },
       (loc) => {
@@ -218,6 +211,56 @@ export default function App() {
       stopWatchingLocation();
     }
   }, [view]);
+
+  // --- POLLING PARA ACTUALIZAR CONTADOR EN TIEMPO REAL ---
+  useEffect(() => {
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    if (view === 'DRIVER_HOME' && driverData && activeJornada) {
+      intervalId = setInterval(async () => {
+        try {
+          const res = await fetch(`${API_URL}/api/conductor/jornada/actual/${driverData.id}`);
+          const data = await res.json();
+          if (data.jornada) {
+            setActiveJornada(data.jornada);
+          }
+        } catch (e) {
+          console.log("Error actualizando contador:", e);
+        }
+      }, 5000);
+    }
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [view, driverData, activeJornada?.id]);
+
+  // --- TEMPORIZADOR DE TIEMPO EN RUTA ---
+  useEffect(() => {
+    let timerInterval: ReturnType<typeof setInterval> | null = null;
+
+    if (view === 'DRIVER_JORNADA_ACTIVA' && activeJornada?.inicio) {
+      const updateTimer = () => {
+        const start = new Date(activeJornada.inicio).getTime();
+        const now = Date.now();
+        const diff = Math.floor((now - start) / 1000);
+        const hours = Math.floor(diff / 3600);
+        const minutes = Math.floor((diff % 3600) / 60);
+        const seconds = diff % 60;
+        setElapsedTime(
+          `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+        );
+      };
+      updateTimer();
+      timerInterval = setInterval(updateTimer, 1000);
+    } else {
+      setElapsedTime('00:00:00');
+    }
+
+    return () => {
+      if (timerInterval) clearInterval(timerInterval);
+    };
+  }, [view, activeJornada?.inicio]);
 
   // --- FUNCIONES MODO CONDUCTOR ---
   const handleDriverLogin = async () => {
@@ -243,7 +286,11 @@ export default function App() {
 
       const data = await res.json();
       setDriverData(data.conductor);
+      setSelectedHorario(null);
+      setSelectedRoute(null);
+      setActiveJornada(null);
       await loadActiveJornada(data.conductor.id);
+      await loadRoutes();
       setView('DRIVER_HOME');
       setPinInput('');
     } catch (e) {
@@ -257,28 +304,50 @@ export default function App() {
     try {
       const res = await fetch(`${API_URL}/api/conductor/jornada/actual/${conductorId}`);
       const data = await res.json();
-      if (data.jornada) {
+      if (data.jornada && data.jornada.id) {
         setActiveJornada(data.jornada);
+        setView('DRIVER_JORNADA_ACTIVA');
+      } else {
+        setActiveJornada(null);
       }
     } catch (e) {
       console.log("Error cargando jornada:", e);
+      setActiveJornada(null);
     }
+  };
+
+  const loadRoutes = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/rutas`);
+      if (res.ok) {
+        const data = await res.json();
+        setRoutes(data.rutas || []);
+      }
+    } catch (e) { console.log("Error cargando rutas:", e); }
   };
 
   const handleStartJornada = async () => {
     if (!driverData) return;
+    if (!selectedHorario) {
+      Alert.alert("Selecciona Horario", "Debes elegir un horario antes de iniciar la jornada");
+      return;
+    }
+    if (!selectedRoute) {
+      Alert.alert("Selecciona Ruta", "Debes elegir una ruta antes de iniciar la jornada");
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch(`${API_URL}/api/conductor/jornada/iniciar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conductor_id: driverData.id })
+        body: JSON.stringify({ conductor_id: driverData.id, ruta_id: selectedRoute.id })
       });
 
       if (res.ok) {
         const data = await res.json();
         setActiveJornada({ id: data.jornada_id, inicio: new Date().toISOString(), estudiantes_transportados: 0 });
-        Alert.alert("Jornada Iniciada", "¡Buen viaje! 🚌");
+        setView('DRIVER_JORNADA_ACTIVA');
       } else {
         const err = await res.json();
         Alert.alert("Error", err.detail || "No se pudo iniciar la jornada");
@@ -287,6 +356,42 @@ export default function App() {
       Alert.alert("Error", "Sin conexión al servidor");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleEmergency = () => {
+    if (!driverData) {
+      Alert.alert('Error', 'Conductor no autenticado');
+      return;
+    }
+    Alert.alert(
+      'Reportar Emergencia',
+      'Selecciona el tipo de emergencia',
+      [
+        { text: 'Accidente', onPress: () => reportEmergency('Accidente') },
+        { text: 'Problema mecánico', onPress: () => reportEmergency('Mecanico') },
+        { text: 'Otro', onPress: () => reportEmergency('Otro') },
+        { text: 'Cancelar', style: 'cancel' },
+      ]
+    );
+  };
+
+  const reportEmergency = async (type: string) => {
+    if (!driverData) return;
+    try {
+      const res = await fetch(`${API_URL}/api/conductor/emergencia`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conductor_id: driverData.id, tipo: type }),
+      });
+      if (res.ok) {
+        Alert.alert('Emergencia enviada', `Tipo: ${type}`);
+      } else {
+        const err = await res.json();
+        Alert.alert('Error', err.detail || 'No se pudo enviar la emergencia');
+      }
+    } catch (e) {
+      Alert.alert('Error', 'Sin conexión al servidor');
     }
   };
 
@@ -308,6 +413,7 @@ export default function App() {
               Alert.alert("Jornada Finalizada",
                 `Estudiantes: ${data.estudiantes}\nDuración: ${data.duracion_minutos} min`);
               setActiveJornada(null);
+              setView('DRIVER_HOME');
             }
           } catch (e) {
             Alert.alert("Error", "Sin conexión al servidor");
@@ -338,7 +444,6 @@ export default function App() {
   const handleDriverLogout = () => {
     setDriverData(null);
     setActiveJornada(null);
-    setIsDriverMode(false);
     setView('HOME');
   };
 
@@ -359,19 +464,27 @@ export default function App() {
     } catch (e) { console.error(e); }
   };
 
+  const loadSchedules = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/horarios`);
+      if (res.ok) {
+        const data = await res.json();
+        setSchedules(data.horarios || []);
+      }
+    } catch (e) { console.log("Error cargando horarios:", e); }
+  };
+
   const addToHistory = async (trip: Trip) => {
     const newHistory = [trip, ...history];
     setHistory(newHistory);
     await AsyncStorage.setItem('trips_history', JSON.stringify(newHistory));
   };
 
-  // --- FUNCIÓN PARA OBTENER DIRECCIÓN DESDE COORDENADAS ---
   const getAddressFromCoords = async (latitude: number, longitude: number): Promise<string | undefined> => {
     try {
       const results = await Location.reverseGeocodeAsync({ latitude, longitude });
       if (results.length > 0) {
         const addr = results[0];
-        // Construir dirección legible
         const parts = [
           addr.street,
           addr.streetNumber,
@@ -387,7 +500,6 @@ export default function App() {
     return undefined;
   };
 
-  // --- LÓGICA SCAN ---
   const handleBarCodeScanned = async ({ data }: { data: string }) => {
     setScanned(true);
     try {
@@ -404,7 +516,6 @@ export default function App() {
       const busId = parsed.bus_id || routeId;
       let dbId: number | undefined = undefined;
 
-      // Obtener ubicación de inicio y dirección
       let startLat: number | undefined;
       let startLon: number | undefined;
       let startAddress: string | undefined;
@@ -414,15 +525,11 @@ export default function App() {
           const loc = await Location.getCurrentPositionAsync({});
           startLat = loc.coords.latitude;
           startLon = loc.coords.longitude;
-          // Obtener dirección legible
           startAddress = await getAddressFromCoords(startLat, startLon);
-          console.log("📍 Dirección de inicio:", startAddress);
         }
       } catch (e) { console.log("No se pudo obtener ubicación de inicio"); }
 
       try {
-        console.log("Intentando conectar a:", `${API_URL}/api/viajes/iniciar`);
-
         const response = await fetch(`${API_URL}/api/viajes/iniciar`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -438,13 +545,10 @@ export default function App() {
         if (response.ok) {
           const res = await response.json();
           dbId = res.viaje_id;
-          console.log("¡Conexión exitosa! ID BD:", dbId);
         } else {
-          console.log("Error servidor:", await response.text());
           Alert.alert("Error Servidor", "El servidor respondió con error");
         }
       } catch (e) {
-        console.log("Error de Red / Modo Offline:", e);
         Alert.alert("Modo Offline", "No se pudo conectar con la PC. Se guardará local.");
       }
 
@@ -473,7 +577,6 @@ export default function App() {
     }
   };
 
-  // --- LÓGICA GPS ---
   const handleFinishTrip = async () => {
     if (!activeTrip) return;
     setLoading(true);
@@ -488,12 +591,8 @@ export default function App() {
     try {
       const loc = await Location.getCurrentPositionAsync({});
       let synced = false;
-
-      // Obtener dirección legible
       const endAddress = await getAddressFromCoords(loc.coords.latitude, loc.coords.longitude);
-      console.log("📍 Dirección de fin:", endAddress);
 
-      // Intentar sincronizar con el servidor si tenemos databaseId
       if (activeTrip.databaseId) {
         try {
           const res = await fetch(`${API_URL}/api/viajes/finalizar/${activeTrip.databaseId}`, {
@@ -509,13 +608,10 @@ export default function App() {
         } catch (e) { console.log("Error sync salida"); }
       }
 
-      // Determinar el estado de sincronización
       let syncStatus: 'synced' | 'pending_start' | 'pending_end' = 'synced';
       if (!activeTrip.databaseId) {
-        // Nunca se sincronizó el inicio
         syncStatus = 'pending_start';
       } else if (!synced) {
-        // El inicio se sincronizó pero el fin no
         syncStatus = 'pending_end';
       }
 
@@ -537,7 +633,6 @@ export default function App() {
       setActiveTrip(null);
       setView('HOME');
 
-      // Solo mostrar alerta si hubo problema de sincronización
       if (syncStatus !== 'synced') {
         Alert.alert("Viaje Finalizado", "Se sincronizará cuando haya conexión 💾");
       }
@@ -549,40 +644,29 @@ export default function App() {
     }
   };
 
-  // --- UI (Sin cambios) ---
+  // --- RENDERIZADO DE PANTALLA COMPLETA QR ---
   if (view === 'SCANNING') {
-    if (!permission?.granted) {
-      return (
-        <View style={styles.center}>
-          <Text style={{ marginBottom: 20 }}>Necesitamos acceso a la cámara</Text>
-          <TouchableOpacity onPress={requestPermission} style={styles.btnBlack}><Text style={styles.btnText}>Permitir</Text></TouchableOpacity>
-        </View>
-      );
-    }
     return (
-      <View style={{ flex: 1, backgroundColor: 'black' }}>
-        <CameraView style={StyleSheet.absoluteFill} facing="back" onBarcodeScanned={scanned ? undefined : handleBarCodeScanned} />
-        <SafeAreaView style={{ flex: 1 }}>
-          <View style={{ flex: 1 }} />
-          <View style={styles.scanOverlay}>
-            <Text style={{ color: 'white', marginBottom: 20, fontWeight: 'bold' }}>Escanea el QR del Bus</Text>
-            {loading && <ActivityIndicator color="white" />}
-            <TouchableOpacity onPress={() => setView('HOME')} style={{ marginTop: 20, backgroundColor: 'rgba(255,255,255,0.2)', padding: 10, borderRadius: 20 }}>
-              <Text style={{ color: 'white' }}>Cancelar</Text>
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
-      </View>
+      <ScanningScreen
+        permissionGranted={!!permission?.granted}
+        requestPermission={requestPermission}
+        scanned={scanned}
+        handleBarCodeScanned={handleBarCodeScanned}
+        loading={loading}
+        onCancel={() => setView('HOME')}
+      />
     );
   }
 
+  // --- RENDERIZADO PRINCIPAL DE LA APP ---
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
       <LinearGradient colors={['rgba(79, 70, 229, 0.1)', 'transparent']} style={styles.backgroundGradient} />
 
       <SafeAreaView style={{ flex: 1 }}>
-        {view !== 'MAP' && view !== 'SETTINGS' && view !== 'DRIVER_LOGIN' && view !== 'DRIVER_HOME' && (
+        {/* Cabecera compartida para modo Estudiante/Pasajero */}
+        {view !== 'MAP' && view !== 'SETTINGS' && view !== 'DRIVER_LOGIN' && view !== 'DRIVER_HOME' && view !== 'DRIVER_JORNADA_ACTIVA' && view !== 'DRIVER_HISTORIAL' && (
           <>
             <View style={styles.header}>
               <View style={styles.statusPill}>
@@ -610,256 +694,71 @@ export default function App() {
 
         <View style={styles.content}>
           {view === 'HOME' ? (
-            <View style={styles.centerContent}>
-              <TouchableOpacity style={styles.orbButton} onPress={() => setView('SCANNING')}>
-                <LinearGradient colors={['#111827', '#374151']} style={styles.orbGradient}>
-                  <QrCode color="white" size={48} />
-                  <Text style={styles.orbText}>ESCANEAR</Text>
-                </LinearGradient>
-                <View style={[styles.ring, { width: 220, height: 220 }]} />
-                <View style={[styles.ring, { width: 260, height: 260, opacity: 0.3 }]} />
-              </TouchableOpacity>
-              <View style={{ marginTop: 40, alignItems: 'center' }}>
-                <Text style={styles.sectionTitle}>Iniciar Nuevo Viaje</Text>
-                <Text style={styles.sectionSub}>Acerca tu dispositivo al código QR</Text>
-              </View>
-            </View>
-          ) : view === 'ON_TRIP' ? (
-            <View style={styles.tripCard}>
-              <View style={styles.tripHeader}><View style={styles.statusBadge}><View style={[styles.dotSolid, { backgroundColor: '#10B981' }]} /></View></View>
-              <View style={styles.busIconBox}><Bus color="white" size={32} /></View>
-              <Text style={styles.tripTitle}>{activeTrip?.route.name}</Text>
-              <Text style={styles.tripSub}>Unidad #{activeTrip?.route.busNumber || '---'}</Text>
-
-              <View style={styles.infoGrid}>
-                <View style={styles.infoBox}><Clock size={16} color={COLORS.gray} /><Text style={styles.infoLabel}>INICIO</Text><Text style={styles.infoValue}>{activeTrip ? format(new Date(activeTrip.startTime), 'HH:mm') : '--'}</Text></View>
-                <View style={styles.infoBox}><Navigation size={16} color={COLORS.gray} /><Text style={styles.infoLabel}>ESTADO</Text><Text style={styles.infoValue}>En Ruta</Text></View>
-              </View>
-
-              <TouchableOpacity style={styles.finishBtn} onPress={handleFinishTrip} disabled={loading}>
-                {loading ? <ActivityIndicator color="white" /> : (<><StopCircle color="white" size={20} style={{ marginRight: 10 }} /><Text style={styles.btnText}>FINALIZAR VIAJE</Text></>)}
-              </TouchableOpacity>
-            </View>
-          ) : view === 'MAP' ? (
-            <View style={styles.mapContainer}>
-              <View style={styles.mapHeader}>
-                <Text style={styles.mapTitle}>Tu Ubicación</Text>
-                <TouchableOpacity
-                  style={styles.centerBtn}
-                  onPress={() => {
-                    // Force refresh location
-                    startWatchingLocation();
-                  }}
-                >
-                  <Navigation size={18} color="#fff" />
-                </TouchableOpacity>
-              </View>
-              {userLocation ? (
-                <WebView
-                  style={styles.map}
-                  originWhitelist={['*']}
-                  source={{
-                    html: `
-                      <!DOCTYPE html>
-                      <html>
-                      <head>
-                        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-                        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-                        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-                        <style>
-                          * { margin: 0; padding: 0; }
-                          html, body, #map { width: 100%; height: 100%; }
-                        </style>
-                      </head>
-                      <body>
-                        <div id="map"></div>
-                        <script>
-                          var map = L.map('map').setView([${userLocation.latitude}, ${userLocation.longitude}], 16);
-                          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                            attribution: '© OpenStreetMap'
-                          }).addTo(map);
-                          
-                          var pulsingIcon = L.divIcon({
-                            className: 'pulsing-marker',
-                            html: '<div style="width: 20px; height: 20px; background: #4F46E5; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 10px rgba(0,0,0,0.3);"><div style="position: absolute; width: 40px; height: 40px; background: rgba(79,70,229,0.3); border-radius: 50%; top: -10px; left: -10px; animation: pulse 2s infinite;"></div></div><style>@keyframes pulse { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(2); opacity: 0; } }</style>',
-                            iconSize: [20, 20],
-                            iconAnchor: [10, 10]
-                          });
-                          
-                          L.marker([${userLocation.latitude}, ${userLocation.longitude}], {icon: pulsingIcon})
-                            .addTo(map)
-                            .bindPopup('<b>Tu ubicación</b><br>Estás aquí');
-                        </script>
-                      </body>
-                      </html>
-                    `
-                  }}
-                />
-              ) : (
-                <View style={styles.mapLoading}>
-                  <ActivityIndicator size="large" color={COLORS.dark} />
-                  <Text style={styles.mapLoadingText}>Obteniendo ubicación...</Text>
-                </View>
-              )}
-              <View style={styles.locationInfo}>
-                <MapPin size={16} color={COLORS.gray} />
-                <Text style={styles.locationText}>
-                  {userLocation
-                    ? `${userLocation.latitude.toFixed(6)}, ${userLocation.longitude.toFixed(6)}`
-                    : 'Buscando GPS...'}
-                </Text>
-              </View>
-            </View>
-          ) : view === 'DRIVER_LOGIN' ? (
-            <View style={styles.driverLoginContainer}>
-              <View style={styles.driverLoginCard}>
-                <View style={styles.driverIconBox}>
-                  <Bus color="white" size={40} />
-                </View>
-                <Text style={styles.driverLoginTitle}>Modo Conductor</Text>
-                <Text style={styles.driverLoginSub}>Ingresa tu PIN de acceso</Text>
-
-                <View style={styles.pinDisplay}>
-                  {[0, 1, 2, 3].map(i => (
-                    <View key={i} style={[styles.pinDot, pinInput.length > i && styles.pinDotFilled]} />
-                  ))}
-                </View>
-
-                <View style={styles.pinPad}>
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, null, 0, 'del'].map((num, i) => (
-                    <TouchableOpacity
-                      key={i}
-                      style={[styles.pinKey, num === null && { opacity: 0 }]}
-                      disabled={num === null}
-                      onPress={() => {
-                        if (num === 'del') {
-                          setPinInput(prev => prev.slice(0, -1));
-                        } else if (typeof num === 'number' && pinInput.length < 4) {
-                          setPinInput(prev => prev + num.toString());
-                        }
-                      }}
-                    >
-                      <Text style={styles.pinKeyText}>{num === 'del' ? '⌫' : num}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                <TouchableOpacity
-                  style={[styles.driverLoginBtn, pinInput.length !== 4 && { opacity: 0.5 }]}
-                  onPress={handleDriverLogin}
-                  disabled={pinInput.length !== 4 || loading}
-                >
-                  {loading ? <ActivityIndicator color="white" /> : <Text style={styles.btnText}>INGRESAR</Text>}
-                </TouchableOpacity>
-
-                <TouchableOpacity onPress={() => { setView('HOME'); setPinInput(''); }} style={{ marginTop: 20 }}>
-                  <Text style={{ color: COLORS.gray }}>Cancelar</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+            <PassengerHomeScreen onScanPress={() => setView('SCANNING')} />
           ) : view === 'DRIVER_HOME' ? (
-            <ScrollView style={{ flex: 1 }}>
-              <View style={styles.driverHeader}>
-                <View style={styles.driverAvatarBox}>
-                  <Bus color="white" size={28} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.driverName}>{driverData?.nombre || 'Conductor'}</Text>
-                  <Text style={styles.driverBus}>Bus: {driverData?.bus_asignado || '---'}</Text>
-                </View>
-                <TouchableOpacity onPress={handleDriverLogout} style={styles.logoutBtn}>
-                  <Text style={{ color: COLORS.gray, fontSize: 12 }}>Salir</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.studentCounter}>
-                <Text style={styles.studentLabel}>ESTUDIANTES TRANSPORTADOS</Text>
-                <Text style={styles.studentCount}>{activeJornada?.estudiantes_transportados || 0}</Text>
-                <TouchableOpacity
-                  style={[styles.addStudentBtn, !activeJornada && { opacity: 0.5 }]}
-                  onPress={handleAddStudent}
-                  disabled={!activeJornada}
-                >
-                  <Text style={styles.addStudentText}>+ Registrar Estudiante</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.jornadaCard}>
-                {activeJornada ? (
-                  <>
-                    <View style={styles.jornadaActive}>
-                      <View style={[styles.dotSolid, { backgroundColor: COLORS.success }]} />
-                      <Text style={styles.jornadaStatus}>Jornada Activa</Text>
-                    </View>
-                    <Text style={styles.jornadaTime}>
-                      Inicio: {activeJornada.inicio ? format(new Date(activeJornada.inicio), 'HH:mm') : '--'}
-                    </Text>
-                    <TouchableOpacity style={styles.endJornadaBtn} onPress={handleEndJornada} disabled={loading}>
-                      {loading ? <ActivityIndicator color="white" /> : (
-                        <><StopCircle color="white" size={18} style={{ marginRight: 8 }} /><Text style={styles.btnText}>FINALIZAR JORNADA</Text></>
-                      )}
-                    </TouchableOpacity>
-                  </>
-                ) : (
-                  <>
-                    <Text style={styles.jornadaInactive}>Sin jornada activa</Text>
-                    <TouchableOpacity style={styles.startJornadaBtn} onPress={handleStartJornada} disabled={loading}>
-                      {loading ? <ActivityIndicator color="white" /> : (
-                        <><Clock color="white" size={18} style={{ marginRight: 8 }} /><Text style={styles.btnText}>INICIAR JORNADA</Text></>
-                      )}
-                    </TouchableOpacity>
-                  </>
-                )}
-              </View>
-            </ScrollView>
+            <DriverHomeScreen
+              driverData={driverData}
+              selectedHorario={selectedHorario}
+              setSelectedHorario={setSelectedHorario}
+              selectedRoute={selectedRoute}
+              setSelectedRoute={setSelectedRoute}
+              routes={routes}
+              handleStartJornada={handleStartJornada}
+              loading={loading}
+              onViewHistory={() => setView('DRIVER_HISTORIAL')}
+              onLogout={handleDriverLogout}
+            />
+          ) : view === 'DRIVER_HISTORIAL' ? (
+            <DriverHistoryScreen
+              driverHistorial={driverHistorial}
+              onBack={() => setView('DRIVER_HOME')}
+            />
+          ) : view === 'DRIVER_JORNADA_ACTIVA' ? (
+            <DriverJornadaScreen
+              driverData={driverData}
+              selectedRoute={selectedRoute}
+              activeJornada={activeJornada}
+              elapsedTime={elapsedTime}
+              handleEndJornada={handleEndJornada}
+              handleEmergency={handleEmergency}
+              handleAddStudent={handleAddStudent}
+            />
+          ) : view === 'ON_TRIP' ? (
+            <PassengerTripScreen
+              activeTrip={activeTrip}
+              onFinishTrip={handleFinishTrip}
+              loading={loading}
+            />
+          ) : view === 'MAP' ? (
+            <LeafletMap
+              userLocation={userLocation}
+              startWatchingLocation={startWatchingLocation}
+            />
+          ) : view === 'DRIVER_LOGIN' ? (
+            <DriverLoginScreen
+              pinInput={pinInput}
+              setPinInput={setPinInput}
+              handleDriverLogin={handleDriverLogin}
+              loading={loading}
+              onCancel={() => { setView('HOME'); setPinInput(''); }}
+            />
           ) : view === 'SETTINGS' ? (
-            <View style={{ flex: 1, paddingHorizontal: 20 }}>
-              <View style={styles.settingsHeader}>
-                <TouchableOpacity onPress={() => setView('HOME')} style={styles.backBtn}>
-                  <Text style={{ fontSize: 24, color: COLORS.dark }}>←</Text>
-                </TouchableOpacity>
-                <Text style={styles.settingsTitle}>Configuración</Text>
-                <View style={{ width: 40 }} />
-              </View>
-
-              <View style={styles.settingsList}>
-                <TouchableOpacity
-                  style={styles.settingsItem}
-                  onPress={() => setView('DRIVER_LOGIN')}
-                >
-                  <View style={styles.settingsItemIcon}>
-                    <Bus size={22} color={COLORS.driver} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.settingsItemTitle}>Modo Conductor</Text>
-                    <Text style={styles.settingsItemSub}>Acceso para conductores de bus</Text>
-                  </View>
-                  <Text style={{ fontSize: 18, color: COLORS.gray }}>›</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+            <PassengerSettingsScreen
+              onBack={() => setView('HOME')}
+              onSelectDriverMode={() => setView('DRIVER_LOGIN')}
+            />
+          ) : view === 'SCHEDULES' ? (
+            <PassengerSchedulesScreen
+              schedules={schedules}
+              todayDate={todayDate}
+            />
           ) : (
-            <ScrollView style={{ paddingHorizontal: 20 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                <Text style={styles.sectionTitle}>Historial</Text>
-              </View>
-              {history.map((trip, i) => (
-                <View key={i} style={styles.historyCard}>
-                  <View style={styles.dateBox}>
-                    <Text style={styles.dateDay}>{format(new Date(trip.startTime), 'd')}</Text>
-                    <Text style={styles.dateMonth}>{format(new Date(trip.startTime), 'MMM', { locale: es })}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.historyTitle} numberOfLines={1}>{trip.route.name}</Text>
-                    <Text style={styles.historyTime}>{format(new Date(trip.startTime), 'HH:mm')} • {trip.status === 'active' ? 'En curso' : 'Completado'}</Text>
-                  </View>
-                </View>
-              ))}
-            </ScrollView>
+            <PassengerHistoryScreen history={history} />
           )}
         </View>
 
-        {(view === 'HOME' || view === 'HISTORY' || view === 'MAP') && (
+        {/* Barra de navegación inferior compartida */}
+        {(view === 'HOME' || view === 'HISTORY' || view === 'MAP' || view === 'SCHEDULES') && (
           <View style={styles.navbar}>
             <TouchableOpacity onPress={() => setView('HOME')} style={styles.navItem}>
               <Home color={view === 'HOME' ? COLORS.dark : COLORS.gray} size={24} />
@@ -868,6 +767,10 @@ export default function App() {
             <TouchableOpacity onPress={() => setView('MAP')} style={styles.navItem}>
               <MapPin color={view === 'MAP' ? COLORS.dark : COLORS.gray} size={24} />
               <Text style={[styles.navLabel, view === 'MAP' && styles.navLabelActive]}>Mapa</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => { loadSchedules(); setView('SCHEDULES'); }} style={styles.navItem}>
+              <Bus color={view === 'SCHEDULES' ? COLORS.dark : COLORS.gray} size={24} />
+              <Text style={[styles.navLabel, view === 'SCHEDULES' && styles.navLabelActive]}>Horarios</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setView('HISTORY')} style={styles.navItem}>
               <Clock color={view === 'HISTORY' ? COLORS.dark : COLORS.gray} size={24} />
@@ -883,7 +786,6 @@ export default function App() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   backgroundGradient: { position: 'absolute', top: 0, left: 0, right: 0, height: 400 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { paddingHorizontal: 24, paddingTop: 33, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   statusPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.8)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)' },
   dotContainer: { width: 10, height: 10, marginRight: 8, justifyContent: 'center', alignItems: 'center' },
@@ -896,95 +798,10 @@ const styles = StyleSheet.create({
   subTitle: { fontSize: 42, fontWeight: '800', color: '#4B5563', lineHeight: 42 },
   brandText: { marginTop: 4, fontSize: 14, color: '#9CA3AF', fontWeight: '500' },
   content: { flex: 1, paddingTop: 20 },
-  centerContent: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingBottom: 80 },
-  orbButton: { width: 180, height: 180, borderRadius: 90, justifyContent: 'center', alignItems: 'center', elevation: 20, shadowColor: COLORS.primary, shadowOpacity: 0.3, shadowRadius: 20, shadowOffset: { width: 0, height: 10 } },
-  orbGradient: { width: '100%', height: '100%', borderRadius: 90, justifyContent: 'center', alignItems: 'center', padding: 4 },
-  orbText: { color: 'white', fontWeight: 'bold', letterSpacing: 2, fontSize: 12, marginTop: 8 },
-  ring: { position: 'absolute', borderRadius: 200, borderWidth: 1, borderColor: '#C7D2FE', zIndex: -1 },
-  sectionTitle: { fontSize: 20, fontWeight: 'bold', color: COLORS.dark },
-  sectionSub: { fontSize: 14, color: COLORS.gray, marginTop: 4 },
-  tripCard: { margin: 24, backgroundColor: 'white', borderRadius: 32, padding: 30, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 20, elevation: 5 },
-  tripHeader: { width: '100%', alignItems: 'flex-end', marginBottom: -20, zIndex: 1 },
-  statusBadge: { width: 12, height: 12, backgroundColor: '#D1FAE5', borderRadius: 6, justifyContent: 'center', alignItems: 'center' },
-  busIconBox: { width: 80, height: 80, backgroundColor: 'black', borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
-  tripTitle: { fontSize: 24, fontWeight: 'bold', color: COLORS.dark, textAlign: 'center' },
-  tripSub: { fontSize: 14, color: COLORS.gray, fontWeight: '500', marginBottom: 30 },
-  infoGrid: { flexDirection: 'row', gap: 15, width: '100%', marginBottom: 30 },
-  infoBox: { flex: 1, backgroundColor: '#F9FAFB', padding: 15, borderRadius: 16, alignItems: 'center', borderWidth: 1, borderColor: '#F3F4F6' },
-  infoLabel: { fontSize: 10, fontWeight: 'bold', color: COLORS.gray, marginTop: 5 },
-  infoValue: { fontSize: 18, fontWeight: 'bold', color: COLORS.dark, marginTop: 2 },
-  finishBtn: { width: '100%', backgroundColor: 'black', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 18, borderRadius: 16 },
-  btnText: { color: 'white', fontWeight: 'bold', fontSize: 14, letterSpacing: 1 },
-  btnBlack: { backgroundColor: 'black', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
-  historyCard: { flexDirection: 'row', backgroundColor: 'white', padding: 16, borderRadius: 16, marginBottom: 12, alignItems: 'center', borderWidth: 1, borderColor: '#F3F4F6' },
-  dateBox: { width: 48, height: 48, backgroundColor: '#F9FAFB', borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 16, borderWidth: 1, borderColor: '#F3F4F6' },
-  dateDay: { fontSize: 14, fontWeight: 'bold', color: COLORS.dark },
-  dateMonth: { fontSize: 10, fontWeight: 'bold', color: COLORS.gray, textTransform: 'uppercase' },
-  historyTitle: { fontSize: 14, fontWeight: 'bold', color: COLORS.dark },
-  historyTime: { fontSize: 12, color: COLORS.gray },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  settingsBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center' },
   navbar: { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.9)', paddingBottom: 20, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
   navItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   navLabel: { fontSize: 10, fontWeight: '600', color: COLORS.gray, marginTop: 4 },
   navLabelActive: { color: COLORS.dark },
-  scanOverlay: { alignItems: 'center', paddingBottom: 50, backgroundColor: 'rgba(0,0,0,0.6)', paddingTop: 20 },
-  // Map styles
-  mapContainer: { flex: 1, margin: 16, borderRadius: 24, overflow: 'hidden', backgroundColor: 'white', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
-  mapHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  mapTitle: { fontSize: 18, fontWeight: 'bold', color: COLORS.dark },
-  centerBtn: { width: 40, height: 40, backgroundColor: COLORS.dark, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  map: { flex: 1, width: '100%' },
-  mapLoading: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F9FAFB' },
-  mapLoadingText: { marginTop: 12, fontSize: 14, color: COLORS.gray },
-  locationInfo: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: 'white', borderTopWidth: 1, borderTopColor: '#F3F4F6', gap: 8 },
-  locationText: { fontSize: 13, color: COLORS.gray, fontFamily: 'monospace' },
-  markerContainer: { alignItems: 'center', justifyContent: 'center' },
-  markerOuter: { width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(79, 70, 229, 0.2)', justifyContent: 'center', alignItems: 'center' },
-  markerInner: { width: 14, height: 14, borderRadius: 7, backgroundColor: COLORS.primary, borderWidth: 2, borderColor: 'white' },
-  // Settings styles
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  settingsBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center' },
-  settingsDropdown: { position: 'absolute', top: 90, right: 24, backgroundColor: 'white', borderRadius: 16, padding: 8, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 20, elevation: 10, zIndex: 100 },
-  settingsOption: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12 },
-  settingsOptionText: { fontSize: 15, fontWeight: '500', color: COLORS.dark },
-  // Driver mode styles
-  driverToggle: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 30, backgroundColor: 'rgba(245, 158, 11, 0.1)', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 100, borderWidth: 1, borderColor: 'rgba(245, 158, 11, 0.3)' },
-  driverToggleText: { color: COLORS.driver, fontWeight: '600', fontSize: 14 },
-  driverLoginContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
-  driverLoginCard: { width: '100%', backgroundColor: 'white', borderRadius: 32, padding: 32, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 20, elevation: 5 },
-  driverIconBox: { width: 80, height: 80, backgroundColor: COLORS.driver, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
-  driverLoginTitle: { fontSize: 24, fontWeight: 'bold', color: COLORS.dark },
-  driverLoginSub: { fontSize: 14, color: COLORS.gray, marginTop: 4, marginBottom: 24 },
-  pinDisplay: { flexDirection: 'row', gap: 16, marginBottom: 24 },
-  pinDot: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#E5E7EB', borderWidth: 2, borderColor: '#D1D5DB' },
-  pinDotFilled: { backgroundColor: COLORS.driver, borderColor: COLORS.driver },
-  pinPad: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', width: 240, gap: 12 },
-  pinKey: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center' },
-  pinKeyText: { fontSize: 24, fontWeight: '600', color: COLORS.dark },
-  driverLoginBtn: { width: '100%', backgroundColor: COLORS.driver, alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 16, marginTop: 24 },
-  driverHeader: { flexDirection: 'row', alignItems: 'center', padding: 20, backgroundColor: 'white', marginHorizontal: 16, marginTop: 16, borderRadius: 20, gap: 16 },
-  driverAvatarBox: { width: 56, height: 56, backgroundColor: COLORS.driver, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
-  driverName: { fontSize: 18, fontWeight: 'bold', color: COLORS.dark },
-  driverBus: { fontSize: 13, color: COLORS.gray, marginTop: 2 },
-  logoutBtn: { backgroundColor: '#F3F4F6', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
-  studentCounter: { backgroundColor: 'white', marginHorizontal: 16, marginTop: 16, borderRadius: 20, padding: 24, alignItems: 'center' },
-  studentLabel: { fontSize: 11, fontWeight: 'bold', color: COLORS.gray, letterSpacing: 1 },
-  studentCount: { fontSize: 72, fontWeight: 'bold', color: COLORS.dark, marginVertical: 8 },
-  addStudentBtn: { backgroundColor: COLORS.success, paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14, marginTop: 8 },
-  addStudentText: { color: 'white', fontWeight: 'bold', fontSize: 15 },
-  jornadaCard: { backgroundColor: 'white', marginHorizontal: 16, marginTop: 16, marginBottom: 32, borderRadius: 20, padding: 24, alignItems: 'center' },
-  jornadaActive: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  jornadaStatus: { fontSize: 14, fontWeight: '600', color: COLORS.success },
-  jornadaTime: { fontSize: 13, color: COLORS.gray, marginBottom: 20 },
-  jornadaInactive: { fontSize: 16, color: COLORS.gray, marginBottom: 20 },
-  startJornadaBtn: { width: '100%', backgroundColor: COLORS.driver, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 16 },
-  endJornadaBtn: { width: '100%', backgroundColor: '#EF4444', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 16 },
-  // Settings view styles
-  settingsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 16, marginBottom: 10 },
-  settingsTitle: { fontSize: 20, fontWeight: 'bold', color: COLORS.dark },
-  backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center' },
-  settingsList: { gap: 12 },
-  settingsItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 16, borderRadius: 16, gap: 16 },
-  settingsItemIcon: { width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(245, 158, 11, 0.1)', justifyContent: 'center', alignItems: 'center' },
-  settingsItemTitle: { fontSize: 16, fontWeight: '600', color: COLORS.dark },
-  settingsItemSub: { fontSize: 13, color: COLORS.gray, marginTop: 2 },
 });
