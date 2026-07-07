@@ -1,10 +1,10 @@
-# Bus-Connect 🚌
+# Bus-Connect 
 ### Sistema de Gestión de Transporte Universitario UIDE
 **Proyecto Académico para la Gestión y Control de Rutas de Autobuses Universitarios**
 
 ---
 
-## 📋 Descripción del Proyecto
+##  Descripción del Proyecto
 
 **Bus-Connect** es una solución integral orientada a la gestión y supervisión del transporte universitario de la UIDE. El sistema está diseñado bajo una arquitectura cliente-servidor dual, permitiendo que tanto los **estudiantes** como los **conductores de autobuses** interactúen con la plataforma en tiempo real. 
 
@@ -12,7 +12,7 @@ El proyecto consta de una aplicación móvil con soporte offline inteligente, un
 
 ---
 
-## 🛠️ Tecnologías Utilizadas
+##  Tecnologías Utilizadas
 
 ### Frontend (Aplicación Móvil)
 * **React Native & Expo**: Framework para el desarrollo de la aplicación móvil multiplataforma.
@@ -31,9 +31,9 @@ El proyecto consta de una aplicación móvil con soporte offline inteligente, un
 
 ---
 
-## ✨ Características Principales
+##  Características Principales
 
-### 👨‍🎓 Modo Estudiante (Pasajero)
+### Modo Estudiante (Pasajero)
 * **Escaneo QR**: Registro instantáneo al subir al autobús escaneando el código QR del vehículo.
 * **Viajes en Curso**: Pantalla interactiva que detalla el inicio del trayecto y la ruta seleccionada.
 * **Geolocalización en Vivo**: Visualización en tiempo real de la ubicación actual sobre el mapa durante el recorrido.
@@ -41,21 +41,21 @@ El proyecto consta de una aplicación móvil con soporte offline inteligente, un
 * **Consulta de Horarios**: Horarios de salida de las rutas programadas del día.
 * **Soporte Offline**: Si el estudiante aborda el autobús en una zona sin cobertura celular, la app almacena localmente el inicio del viaje y su ubicación GPS, sincronizándolo automáticamente con el servidor de base de datos tan pronto como se recupere la conexión a internet.
 
-### 👨‍✈️ Modo Conductor
+### Modo Conductor
 * **Inicio de Sesión Seguro**: Autenticación rápida mediante un PIN numérico de 4 dígitos.
 * **Control de Jornadas**: Selección de horario de salida y ruta asignada antes de iniciar la marcha.
 * **Contador de Pasajeros en Vivo**: Visualización en tiempo real de la cantidad de estudiantes que escanean el QR a bordo del autobús.
 * **Temporizador de Trayecto**: Control del tiempo transcurrido desde el inicio de la ruta.
 * **Reporte de Emergencias**: Envío de alertas inmediatas al panel administrativo en caso de accidentes, problemas mecánicos u otros contratiempos.
 
-### 🖥️ Dashboard Administrativo (Web)
+###  Dashboard Administrativo (Web)
 * **Métricas Clave**: Cantidad total de viajes registrados, viajes realizados en el día, cantidad de rutas activas y tiempo promedio de trayecto.
 * **Monitoreo de Buses**: Vista en tiempo real de qué conductores y buses están en ruta en el momento exacto.
 * **Historial Detallado**: Consulta y filtrado dinámico de trayectos por fecha y estado.
 
 ---
 
-## 📂 Estructura del Repositorio
+## Estructura del Repositorio
 
 El código está organizado de manera modular siguiendo las mejores prácticas de desarrollo:
 
@@ -87,7 +87,7 @@ Bus-Connect/
 
 ---
 
-## 🚀 Instrucciones de Instalación y Uso
+## Instrucciones de Instalación y Uso
 
 ### 1. Configuración de la Base de Datos (MySQL)
 Crea una base de datos llamada `transporte_uide` y define las tablas correspondientes para:
@@ -137,5 +137,5 @@ Crea una base de datos llamada `transporte_uide` y define las tablas correspondi
 
 ---
 
-## 👤 Autor
+## Autor
 * **Donato Oña** - *Desarrollador y Autor del Proyecto* - UIDE
